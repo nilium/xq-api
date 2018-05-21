@@ -1,0 +1,5 @@
+#!/bin/sh
+for arch; do
+  XBPS_ARCH=$arch xbps-install -S
+done
+sv hup /var/service/xq-api

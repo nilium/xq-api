@@ -1,0 +1,10 @@
+#!/bin/sh
+
+exec 2>&1
+exec snooze -R ${XQAPI_REFRESH_JITTER:-7200} -d '*' -H ${XQAPI_REFRESH_HOUR:-19} \
+  /usr/local/sbin/sync-xbps \
+    x86_64 x86_64-musl \
+    i686 i686-musl \
+    armv6l armv6l-musl \
+    armv7l armv7l-musl \
+    aarch64 aarch64-musl
