@@ -1,0 +1,15 @@
+#!/bin/sh
+
+if [ -f conf ]; then
+  . conf
+fi
+
+if [ x"$XQAPI_ARCHS" = x ]; then
+  for arch in x86_64 i686 armv6l armv7l aarch64; do
+    XQAPI_ARCHS="${XQAPI_ARCHS} ${arch} ${arch}-musl"
+  done
+fi
+
+exec 2>&1
+exec snooze -R ${XQAPI_REFRESH_JITTER:-7200} -d '*' -H ${XQAPI_REFRESH_HOUR:-19} \
+  /usr/local/sbin/sync-xbps $XQAPI_ARCHS

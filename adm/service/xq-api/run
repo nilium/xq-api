@@ -1,0 +1,3 @@
+#!/bin/sh
+exec 2>&1
+exec /usr/local/bin/xq-api -logtostderr -listen=:8197 -max-queries=${XQAPI_MAX_QUERIES:-16} -- /var/db/xbps
