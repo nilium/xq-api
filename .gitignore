@@ -1,4 +1,4 @@
 .*.sw[a-z]
 ~*
-xq-api
+/xq-api
 *.xml
