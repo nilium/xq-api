@@ -3,6 +3,10 @@ package main
 import (
 	"archive/tar"
 	"compress/gzip"
+	"crypto/sha1"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,9 +18,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/glog"
 	"golang.org/x/tools/container/intsets"
 	"howett.net/plist"
 )
+
+var etagEncoding = base64.RawURLEncoding
 
 const repoIndexFile = "index.plist"
 
@@ -90,87 +97,16 @@ func (ps packageIndex) splitFilter(fn FilterFunc) packageIndex {
 }
 
 type RepoData struct {
-	root  packageMap
-	index packageIndex
+	root      packageMap
+	index     packageIndex
+	nameIndex []string
+	etag      string
 }
 
 func NewRepoData() *RepoData {
 	return &RepoData{
 		root: packageMap{},
 	}
-}
-
-type urlVal url.URL
-
-func (u *urlVal) UnmarshalText(p []byte) error {
-	uu, err := url.Parse(string(p))
-	if err != nil {
-		return err
-	}
-	*u = urlVal(*uu)
-	return nil
-}
-
-func (u *urlVal) MarshalText() ([]byte, error) {
-	if u == nil {
-		return nil, nil
-	}
-
-	return []byte((*url.URL)(u).String()), nil
-}
-
-type timeVal time.Time
-
-func (t *timeVal) MarshalText() ([]byte, error) {
-	return []byte(time.Time(*t).Format(time.RFC3339)), nil
-}
-
-func (t *timeVal) UnmarshalText(p []byte) error {
-	const layout = `2006-01-02 15:04 MST`
-	tt, err := time.ParseInLocation(layout, string(p), time.UTC)
-	if err != nil {
-		return err
-	}
-	*t = timeVal(tt.UTC())
-	return nil
-}
-
-type packageMap map[string]*packageData
-
-type packageData struct {
-	PackageVersion string `plist:"pkgver" json:"-,omitempty"`
-	Name           string `plist:"-" json:"name,omitempty"`
-	Version        string `plist:"-" json:"version,omitempty"`
-	Revision       int    `plist:"-" json:"revision,omitempty"`
-
-	Architecture   string  `plist:"architecture" json:"architecture,omitempty"`
-	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty"`
-	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty"`
-	FilenameSHA256 string  `plist:"filename-sha256" json:"filename_sha256,omitempty"`
-	FilenameSize   int64   `plist:"filename-size" json:"filename_size,omitempty"`
-	Homepage       *urlVal `plist:"homepage" json:"homepage,omitempty"`
-	InstalledSize  int64   `plist:"installed_size" json:"installed_size,omitempty"`
-	License        string  `plist:"license" json:"license,omitempty"`
-	Maintainer     string  `plist:"maintainer" json:"maintainer,omitempty"`
-	ShortDesc      string  `plist:"short_desc" json:"short_desc,omitempty"`
-	Preserve       bool    `plist:"preserve" json:"preserve,omitempty"`
-
-	SourceRevisions string `plist:"source-revisions" json:"source_revisions,omitempty"`
-
-	RunDepends []string `plist:"run_depends" json:"run_depends,omitempty"`
-
-	ShlibRequires []string `plist:"shlib-requires" json:"shlib_requires,omitempty"`
-	ShlibProvides []string `plist:"shlib-provides" json:"shlib_provides,omitempty"`
-
-	Conflicts []string `plist:"conflicts" json:"conflicts,omitempty"`
-	Reverts   []string `plist:"reverts" json:"reverts,omitempty"`
-
-	Replaces     []string            `plist:"replaces" json:"replaces,omitempty"`
-	Alternatives map[string][]string `plist:"alternatives" json:"alternatives,omitempty"`
-
-	ConfFiles []string `plist:"conf_files" json:"conf_files,omitempty"`
-
-	Index int `json:"-"`
 }
 
 func (rd *RepoData) LoadRepo(path string) error {
@@ -184,7 +120,17 @@ func (rd *RepoData) LoadRepo(path string) error {
 }
 
 func (rd *RepoData) Index() packageIndex {
+	if rd == nil {
+		return nil
+	}
 	return rd.index
+}
+
+func (rd *RepoData) NameIndex() []string {
+	if rd == nil {
+		return nil
+	}
+	return rd.nameIndex
 }
 
 func (rd *RepoData) ReadRepo(r io.Reader) error {
@@ -254,6 +200,14 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 			_, p.Version, p.Revision, _ = ParseVersionedName(p.PackageVersion)
 		}
 
+		p.ETag, err = p.computeETag()
+		if err != nil {
+			// This really shouldn't happen -- it would mean JSON encoding of packages
+			// was broken.
+			glog.Errorf("unable to compute etag for %q: %v", p.PackageVersion, err)
+			return err
+		}
+
 		rd.root[k] = p
 		if ok {
 			index[old.Index] = p
@@ -271,7 +225,50 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 	}
 
 	rd.index = index
+
+	names := rd.nameIndex[:0]
+	for _, p := range rd.index {
+		names = append(names, p.Name)
+	}
+	rd.nameIndex = names
+
+	etag, err := rd.computeETag()
+	if err != nil {
+		return err
+	}
+	rd.etag = etag
+
 	return nil
+}
+
+func (rd *RepoData) Package(name string) *packageData {
+	if rd == nil {
+		return nil
+	}
+	return rd.root[name]
+}
+
+func (rd *RepoData) computeETag() (string, error) {
+	h := sha1.New()
+
+	index := rd.Index()
+	if err := binary.Write(h, binary.LittleEndian, int64(len(index))); err != nil {
+		return "", err
+	}
+
+	for _, p := range index {
+		binary.Write(h, binary.LittleEndian, int64(len(p.PackageVersion)+len(p.ETag)))
+		io.WriteString(h, p.PackageVersion)
+		io.WriteString(h, p.ETag)
+	}
+
+	sum := h.Sum(make([]byte, 0, h.Size()))
+	etag := `W/"` + etagEncoding.EncodeToString(sum) + `"`
+	return etag, nil
+}
+
+func (rd *RepoData) ETag() string {
+	return rd.etag
 }
 
 var errNoRevision = errors.New("revision not found")
@@ -301,4 +298,88 @@ func ParseVersionedName(s string) (name, version string, revision int, err error
 
 	name, version = s[:vsnidx], s[vsnidx+1:revidx]
 	return
+}
+
+type urlVal url.URL
+
+func (u *urlVal) UnmarshalText(p []byte) error {
+	uu, err := url.Parse(string(p))
+	if err != nil {
+		return err
+	}
+	*u = urlVal(*uu)
+	return nil
+}
+
+func (u *urlVal) MarshalText() ([]byte, error) {
+	if u == nil {
+		return nil, nil
+	}
+
+	return []byte((*url.URL)(u).String()), nil
+}
+
+type timeVal time.Time
+
+func (t *timeVal) MarshalText() ([]byte, error) {
+	return []byte(time.Time(*t).Format(time.RFC3339)), nil
+}
+
+func (t *timeVal) UnmarshalText(p []byte) error {
+	const layout = `2006-01-02 15:04 MST`
+	tt, err := time.ParseInLocation(layout, string(p), time.UTC)
+	if err != nil {
+		return err
+	}
+	*t = timeVal(tt.UTC())
+	return nil
+}
+
+type packageMap map[string]*packageData
+
+type packageData struct {
+	PackageVersion string `plist:"pkgver" json:"-"`
+	Name           string `plist:"-" json:"name,omitempty"`
+	Version        string `plist:"-" json:"version,omitempty"`
+	Revision       int    `plist:"-" json:"revision,omitempty"`
+
+	Architecture   string  `plist:"architecture" json:"architecture,omitempty"`
+	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty"`
+	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty"`
+	FilenameSHA256 string  `plist:"filename-sha256" json:"filename_sha256,omitempty"`
+	FilenameSize   int64   `plist:"filename-size" json:"filename_size,omitempty"`
+	Homepage       *urlVal `plist:"homepage" json:"homepage,omitempty"`
+	InstalledSize  int64   `plist:"installed_size" json:"installed_size,omitempty"`
+	License        string  `plist:"license" json:"license,omitempty"`
+	Maintainer     string  `plist:"maintainer" json:"maintainer,omitempty"`
+	ShortDesc      string  `plist:"short_desc" json:"short_desc,omitempty"`
+	Preserve       bool    `plist:"preserve" json:"preserve,omitempty"`
+
+	SourceRevisions string `plist:"source-revisions" json:"source_revisions,omitempty"`
+
+	RunDepends []string `plist:"run_depends" json:"run_depends,omitempty"`
+
+	ShlibRequires []string `plist:"shlib-requires" json:"shlib_requires,omitempty"`
+	ShlibProvides []string `plist:"shlib-provides" json:"shlib_provides,omitempty"`
+
+	Conflicts []string `plist:"conflicts" json:"conflicts,omitempty"`
+	Reverts   []string `plist:"reverts" json:"reverts,omitempty"`
+
+	Replaces     []string            `plist:"replaces" json:"replaces,omitempty"`
+	Alternatives map[string][]string `plist:"alternatives" json:"alternatives,omitempty"`
+
+	ConfFiles []string `plist:"conf_files" json:"conf_files,omitempty"`
+
+	Index int    `plist:"-" json:"-"`
+	ETag  string `plist:"-" json:"-"`
+}
+
+func (p *packageData) computeETag() (string, error) {
+	h := sha1.New()
+	if err := json.NewEncoder(h).Encode(p); err != nil {
+		return "", nil
+	}
+	sum := h.Sum(make([]byte, 0, h.Size()))
+	etag := `W/"` + etagEncoding.EncodeToString(sum) + `"`
+	return etag, nil
 }
