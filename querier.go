@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync/atomic"
 
+	"github.com/blevesearch/bleve"
+	"github.com/blevesearch/bleve/search/query"
 	"github.com/golang/glog"
 	"github.com/julienschmidt/httprouter"
 )
@@ -52,6 +55,12 @@ func (qr *Querier) reply(w http.ResponseWriter, code int, val interface{}) {
 		w.Header().Set("Content-Length", "0")
 		w.WriteHeader(code)
 		return
+	}
+
+	if err, ok := val.(error); ok {
+		val = struct {
+			Err string `json:"error"`
+		}{Err: err.Error()}
 	}
 
 	// Encode response, write headers, then write body
@@ -165,7 +174,7 @@ func (qr *Querier) Package(w http.ResponseWriter, req *http.Request, params http
 		return
 	}
 
-	if qr.skipIfMatch(w, req, pkg.ETag) {
+	if qr.skipIfMatch(w, req, pkg.HTTPETag) {
 		return
 	}
 
@@ -185,7 +194,7 @@ func (qr *Querier) Package(w http.ResponseWriter, req *http.Request, params http
 
 func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
 
-	query := strings.ToLower(req.FormValue("q"))
+	query := strings.TrimSpace(req.FormValue("q"))
 	arch := params.ByName("arch")
 	rd := qr.getData().Arch(arch)
 	if rd == nil {
@@ -202,14 +211,34 @@ func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httpro
 		return
 	}
 
-	qr.sema <- struct{}{}
-	defer func() { <-qr.sema }()
+	// qr.sema <- struct{}{}
+	// defer func() { <-qr.sema }()
 	sub := rd.Index()
 	if query != "" {
-		sub = sub.Filter(func(p *packageData) bool {
-			return strings.Contains(strings.ToLower(p.PackageVersion), query) ||
-				strings.Contains(strings.ToLower(p.ShortDesc), query)
-		})
+		idx := rd.bindex
+		if idx == nil {
+			qr.reply(w, http.StatusInternalServerError, errors.New("no index available"))
+		}
+		// Not currently using bleve.NewQueryStringQuery(query) because it produces
+		// results that're undesirable for this.
+		bq := parseQueryString(query)
+		sreq := bleve.NewSearchRequest(bq)
+		sreq.Fields = []string{"_id"}
+		sreq.SortBy([]string{"_id"})
+		sreq.Size = len(sub)
+		result, err := idx.Search(sreq)
+		if err != nil {
+			qr.reply(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		hits := result.Hits
+		insub := make(packageIndex, hits.Len())
+		for i, match := range hits {
+			insub[i] = rd.Package(match.ID)
+		}
+
+		sub = insub
 	}
 
 	type shortEntry struct {
@@ -235,4 +264,56 @@ func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httpro
 	}
 
 	qr.reply(w, http.StatusOK, response)
+}
+
+type termRequirement int
+
+const (
+	termMust termRequirement = iota
+	termShould
+	termOmit
+)
+
+func parseQueryString(qs string) query.Query {
+	boolquery := query.NewBooleanQuery(nil, nil, nil)
+	for _, term := range strings.Fields(qs) {
+		add := boolquery.AddMust
+
+		switch term[0] {
+		case '+':
+			term = term[1:]
+		case '-':
+			term, add = term[1:], boolquery.AddMustNot
+		case '~':
+			term, add = term[1:], boolquery.AddShould
+		}
+
+		var q query.Query
+		var field string
+		if fsidx := strings.IndexByte(term, ':'); fsidx != -1 {
+			field, term = term[:fsidx], term[fsidx+1:]
+		}
+		if field == "" {
+			field = "_all"
+		}
+
+		if strings.ContainsAny(term, "*?") {
+			q = query.NewWildcardQuery(term)
+		} else {
+			qt := query.NewTermQuery(term)
+			qt.SetField(field)
+			qp := query.NewPrefixQuery(term)
+			qp.SetField(field)
+			q = query.NewDisjunctionQuery([]query.Query{qt, qp})
+		}
+
+		switch q := q.(type) {
+		case interface{ SetField(string) }:
+			q.SetField(field)
+		}
+
+		add(q)
+	}
+
+	return boolquery
 }

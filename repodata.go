@@ -18,6 +18,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blevesearch/bleve"
+	"github.com/blevesearch/bleve/analysis/analyzer/keyword"
+	"github.com/blevesearch/bleve/analysis/analyzer/web"
+	"github.com/blevesearch/bleve/mapping"
 	"github.com/golang/glog"
 	"golang.org/x/tools/container/intsets"
 	"howett.net/plist"
@@ -101,12 +105,20 @@ type RepoData struct {
 	index     packageIndex
 	nameIndex []string
 	etag      string
+	bindex    bleve.Index
 }
 
 func NewRepoData() *RepoData {
 	return &RepoData{
 		root: packageMap{},
 	}
+}
+
+func (rd *RepoData) Close() error {
+	if rd == nil || rd.bindex == nil {
+		return nil
+	}
+	return rd.bindex.Close()
 }
 
 func (rd *RepoData) LoadRepo(path string) error {
@@ -117,6 +129,131 @@ func (rd *RepoData) LoadRepo(path string) error {
 	defer fi.Close()
 
 	return rd.ReadRepo(fi)
+}
+
+func newPackageMapping() *mapping.DocumentMapping {
+	allmap := bleve.NewTextFieldMapping()
+	allmap.Analyzer = "en"
+	allmap.IncludeInAll = true
+	allmap.Store = false
+
+	unimap := bleve.NewTextFieldMapping()
+	unimap.Store = false
+	unimap.IncludeInAll = true
+
+	kwallmap := bleve.NewTextFieldMapping()
+	kwallmap.Analyzer = keyword.Name
+	kwallmap.IncludeInAll = true
+	kwallmap.Store = false
+
+	textmap := bleve.NewTextFieldMapping()
+	textmap.Analyzer = "en"
+	textmap.IncludeInAll = false
+	textmap.Store = false
+
+	webmap := bleve.NewTextFieldMapping()
+	webmap.Analyzer = web.Name
+	webmap.IncludeInAll = false
+	webmap.Store = false
+
+	kwmap := bleve.NewTextFieldMapping()
+	kwmap.Analyzer = keyword.Name
+	kwmap.IncludeInAll = false
+	kwmap.Store = false
+
+	nummap := bleve.NewNumericFieldMapping()
+	nummap.IncludeInAll = false
+	nummap.Store = false
+
+	datemap := bleve.NewDateTimeFieldMapping()
+	// datemap.DateFormat = time.RFC3339
+	datemap.IncludeInAll = false
+	datemap.Store = false
+
+	boolmap := bleve.NewBooleanFieldMapping()
+	boolmap.IncludeInAll = false
+	boolmap.Store = false
+
+	pkgmap := bleve.NewDocumentMapping()
+	pkgmap.StructTagKey = "search"
+
+	// Keep name, pkgver, and desc in the _all index
+	pkgmap.AddFieldMappingsAt("name", kwallmap, allmap, unimap)
+	pkgmap.AddFieldMappingsAt("pkgver", kwallmap, allmap, unimap)
+	pkgmap.AddFieldMappingsAt("desc", allmap, unimap)
+
+	pkgmap.AddFieldMappingsAt("arch", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("version", kwmap)
+	pkgmap.AddFieldMappingsAt("revision", nummap)
+	pkgmap.AddFieldMappingsAt("builton", datemap)
+	pkgmap.AddFieldMappingsAt("buildopts", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("homepage", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("license", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("maintainer", textmap, webmap)
+	pkgmap.AddFieldMappingsAt("preserve", boolmap)
+	pkgmap.AddFieldMappingsAt("depends", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("shlibreq", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("shlib", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("conflicts", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("reverts", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("replaces", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("conffiles", kwmap, textmap, webmap)
+	pkgmap.AddFieldMappingsAt("etag", kwmap)
+
+	return pkgmap
+}
+
+func (rd *RepoData) CreateSearchIndex() (index bleve.Index, err error) {
+	mapping := bleve.NewIndexMapping()
+	mapping.AddDocumentMapping("package", newPackageMapping())
+
+	index, err = bleve.NewMemOnly(mapping)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			index.Close()
+			index = nil
+		}
+	}()
+
+	if len(rd.Index()) == 0 {
+		return index, nil
+	}
+
+	const batchSize = 1000
+	arch := rd.Index()[0].Architecture
+	total, size, count := 0, len(rd.Index()), 0
+	batch := index.NewBatch()
+	t := time.Now()
+	for _, pkg := range rd.Index() {
+		if err = batch.Index(pkg.Name, pkg); err != nil {
+			return nil, err
+		}
+
+		if count++; count >= batchSize {
+			if err = index.Batch(batch); err != nil {
+				return nil, err
+			}
+			elapsed := time.Since(t)
+			total += count
+			glog.Infof("indexed %d packages (%d/%d) in architecture %s (%v)", count, total, size, arch, elapsed)
+
+			batch = index.NewBatch()
+			count = 0
+			t = time.Now()
+		}
+	}
+
+	if count == 0 {
+	} else if err = index.Batch(batch); err == nil {
+		elapsed := time.Since(t)
+		total += count
+		glog.Infof("indexed %d packages (%d/%d) in architecture %s (%v)", count, total, size, arch, elapsed)
+	}
+
+	return index, err
 }
 
 func (rd *RepoData) Index() packageIndex {
@@ -207,6 +344,7 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 			glog.Errorf("unable to compute etag for %q: %v", p.PackageVersion, err)
 			return err
 		}
+		p.HTTPETag = `"` + p.ETag + `"`
 
 		rd.root[k] = p
 		if ok {
@@ -263,7 +401,7 @@ func (rd *RepoData) computeETag() (string, error) {
 	}
 
 	sum := h.Sum(make([]byte, 0, h.Size()))
-	etag := `W/"` + etagEncoding.EncodeToString(sum) + `"`
+	etag := `"` + etagEncoding.EncodeToString(sum) + `"`
 	return etag, nil
 }
 
@@ -338,41 +476,50 @@ func (t *timeVal) UnmarshalText(p []byte) error {
 type packageMap map[string]*packageData
 
 type packageData struct {
-	PackageVersion string `plist:"pkgver" json:"-"`
-	Name           string `plist:"-" json:"name,omitempty"`
-	Version        string `plist:"-" json:"version,omitempty"`
-	Revision       int    `plist:"-" json:"revision,omitempty"`
+	PackageVersion string `plist:"pkgver" json:"-" search:"pkgver"`
+	Name           string `plist:"-" json:"name,omitempty" search:"name"`
+	Version        string `plist:"-" json:"version,omitempty" search:"version"`
+	Revision       int    `plist:"-" json:"revision,omitempty" search:"revision"`
 
-	Architecture   string  `plist:"architecture" json:"architecture,omitempty"`
-	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty"`
-	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty"`
-	FilenameSHA256 string  `plist:"filename-sha256" json:"filename_sha256,omitempty"`
-	FilenameSize   int64   `plist:"filename-size" json:"filename_size,omitempty"`
-	Homepage       *urlVal `plist:"homepage" json:"homepage,omitempty"`
-	InstalledSize  int64   `plist:"installed_size" json:"installed_size,omitempty"`
-	License        string  `plist:"license" json:"license,omitempty"`
-	Maintainer     string  `plist:"maintainer" json:"maintainer,omitempty"`
-	ShortDesc      string  `plist:"short_desc" json:"short_desc,omitempty"`
-	Preserve       bool    `plist:"preserve" json:"preserve,omitempty"`
+	Architecture   string  `plist:"architecture" json:"architecture,omitempty" search:"arch"`
+	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty" search:"-"`
+	BuildDateStr   string  `plist:"-" json:"-" search:"builton"`
+	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty" search:"buildopts"`
+	FilenameSHA256 string  `plist:"filename-sha256" json:"filename_sha256,omitempty" search:"-"`
+	FilenameSize   int64   `plist:"filename-size" json:"filename_size,omitempty" search:"-"`
+	Homepage       *urlVal `plist:"homepage" json:"homepage,omitempty" search:"-"`
+	HomepageStr    string  `plist:"-" json:"-" search:"homepage"`
+	InstalledSize  int64   `plist:"installed_size" json:"installed_size,omitempty" search:"-"`
+	License        string  `plist:"license" json:"license,omitempty" search:"license"`
+	Maintainer     string  `plist:"maintainer" json:"maintainer,omitempty" search:"maintainer"`
+	ShortDesc      string  `plist:"short_desc" json:"short_desc,omitempty" search:"desc"`
+	Preserve       bool    `plist:"preserve" json:"preserve,omitempty" search:"preserve"`
 
-	SourceRevisions string `plist:"source-revisions" json:"source_revisions,omitempty"`
+	SourceRevisions string `plist:"source-revisions" json:"source_revisions,omitempty" search:"-"`
 
-	RunDepends []string `plist:"run_depends" json:"run_depends,omitempty"`
+	RunDepends []string `plist:"run_depends" json:"run_depends,omitempty" search:"depends"`
 
-	ShlibRequires []string `plist:"shlib-requires" json:"shlib_requires,omitempty"`
-	ShlibProvides []string `plist:"shlib-provides" json:"shlib_provides,omitempty"`
+	ShlibRequires []string `plist:"shlib-requires" json:"shlib_requires,omitempty" search:"shlibreq"`
+	ShlibProvides []string `plist:"shlib-provides" json:"shlib_provides,omitempty" search:"shlib"`
 
-	Conflicts []string `plist:"conflicts" json:"conflicts,omitempty"`
-	Reverts   []string `plist:"reverts" json:"reverts,omitempty"`
+	Conflicts []string `plist:"conflicts" json:"conflicts,omitempty" search:"conflicts"`
+	Reverts   []string `plist:"reverts" json:"reverts,omitempty" search:"reverts"`
 
-	Replaces     []string            `plist:"replaces" json:"replaces,omitempty"`
-	Alternatives map[string][]string `plist:"alternatives" json:"alternatives,omitempty"`
+	Replaces     []string            `plist:"replaces" json:"replaces,omitempty" search:"replaces"`
+	Alternatives map[string][]string `plist:"alternatives" json:"alternatives,omitempty" search:"-"`
 
-	ConfFiles []string `plist:"conf_files" json:"conf_files,omitempty"`
+	ConfFiles []string `plist:"conf_files" json:"conf_files,omitempty" search:"conffiles"`
 
-	Index int    `plist:"-" json:"-"`
-	ETag  string `plist:"-" json:"-"`
+	Index    int    `plist:"-" json:"-" search:"-"`
+	ETag     string `plist:"-" json:"etag" search:"etag"`
+	HTTPETag string `plist:"-" json:"-" search:"-"`
 }
+
+func (p *packageData) Type() string {
+	return "package"
+}
+
+var _ mapping.Classifier = (*packageData)(nil)
 
 func (p *packageData) computeETag() (string, error) {
 	h := sha1.New()
@@ -380,6 +527,6 @@ func (p *packageData) computeETag() (string, error) {
 		return "", nil
 	}
 	sum := h.Sum(make([]byte, 0, h.Size()))
-	etag := `W/"` + etagEncoding.EncodeToString(sum) + `"`
+	etag := etagEncoding.EncodeToString(sum)
 	return etag, nil
 }

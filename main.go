@@ -84,17 +84,54 @@ func main() {
 	}
 }
 
-func reloadRepoData(api *Querier, files []string) error {
+func reloadRepoData(api *Querier, files []string) (err error) {
 	glog.Info("loading repodata...")
 	archs, err := loadArchIndices(flag.Args())
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		if err == nil {
+			return
+		}
+		for _, rd := range archs.archs {
+			rd.Close()
+		}
+	}()
+
 	packages := 0
 	for _, rd := range archs.archs {
 		packages += len(rd.Index())
 	}
 	glog.Infof("loaded repodata: read %d packages", packages)
+
+	errch := make(chan error)
+	for arch, rd := range archs.archs {
+		go func(arch string, rd *RepoData) {
+			t := time.Now()
+			glog.Infof("indexing architecture %s (%d packages)...", arch, len(rd.Index()))
+			var err error
+			defer func() { errch <- err }()
+			rd.bindex, err = rd.CreateSearchIndex()
+			if err != nil {
+				glog.Warningf("error indexing architecture %s (%d packages): %v", arch, len(rd.Index()), err)
+				return
+			}
+			glog.Infof("finished indexing architecture %s (%d packages): %v", arch, len(rd.Index()), time.Since(t))
+		}(arch, rd)
+	}
+
+	for range archs.archs {
+		if e := <-errch; e != nil && err == nil {
+			err = e
+		}
+	}
+
+	if err != nil {
+		return err
+	}
+
 	api.SetData(archs)
 	return nil
 }

@@ -135,7 +135,7 @@ func (a *archIndex) computeETag() string {
 		io.WriteString(h, name)
 	}
 	sum := h.Sum(make([]byte, 0, h.Size()))
-	return `W/"` + etagEncoding.EncodeToString(sum) + `"`
+	return `"` + etagEncoding.EncodeToString(sum) + `"`
 }
 
 func (a *archIndex) init() error {
