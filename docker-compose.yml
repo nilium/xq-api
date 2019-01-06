@@ -1,0 +1,10 @@
+version: '2.1'
+
+services:
+  api:
+    container_name: xq.api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 127.0.0.1:8197:8197
