@@ -2,8 +2,11 @@ FROM golang:1 AS build
 
 ENV GOPATH="/q/go"
 
-COPY . $GOPATH/src/go.spiff.io/xq-api
-RUN go build -v -o /usr/local/bin/xq-api go.spiff.io/xq-api
+COPY . /q/xq-api
+WORKDIR /q/xq-api
+RUN go build -mod=vendor -v -o /usr/local/bin/xq-api go.spiff.io/xq-api
+
+WORKDIR /q/go
 RUN go get go.spiff.io/retrap
 
 FROM voidlinux/voidlinux:latest
