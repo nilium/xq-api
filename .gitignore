@@ -2,3 +2,5 @@
 ~*
 /xq-api
 *.xml
+elm-stuff
+node_modules

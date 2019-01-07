@@ -3,3 +3,5 @@ Dockerfile
 .dockerignore
 docker-compose.yml
 xq-api
+elm-stuff
+node_modules/
