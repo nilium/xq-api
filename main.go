@@ -34,7 +34,7 @@ func main() {
 	go func() {
 		for range sig {
 			if err := reloadRepoData(api, flag.Args()); err != nil {
-
+				glog.Warningf("Error reloading repository data: %v", err)
 			}
 		}
 	}()
