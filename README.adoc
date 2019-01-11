@@ -1,0 +1,313 @@
+= xq-api(8)
+Noel Cower
+:doctype: manpage
+:manmanual: XQ-API
+:mansource: XQ-API
+:man-linkstyle: pass:[blue R < >]
+// vim: set sw=4 ts=4 et tw=80 :
+
+== Name
+
+xq-api - serve XBPS repodata over HTTP
+
+== Synopsis
+
+*xq-api* [_OPTIONS_] [--] <_REPODATA..._>`
+
+
+== Description
+
+*xq-api* serves XBPS repodata over HTTP, formatting its responses as JSON.
+It loads repodata into memory prior to serving it.
+
+
+== Options
+
+`-h`, `-help`::
+    Print all CLI flags. This includes glog flags not described below that are
+    primarily used for debugging and log rotation.
+
+`-net`=_{network}_::
+    The type of network address to listen on. May be one of `unix` (Unix domain
+    socket), `tcp`, `tcp4` (IPv4 only), or `tcp6` (IPv6 only).
+    Defaults to `tcp`.
+
+`-listen`=_{addr}_::
+    The address to listen on. If `-net` is `unix`, this is a path to the Unix
+    domain socket to create.
+    Defaults to `127.0.0.1:8197`, regardless of what `-net` is.
+
+`-max-queries`=_{n}_::
+    The maximum number of query requests that can run in parallel. If more than
+    `n` query requests are made in parallel, they will block until others
+    complete.
+    Defaults to `16`.
+
+`-log-access`=_{t|f}_::
+    Whether to emit access logs. Requests that get a 404, 304, or 0 response are
+    not logged. If passed without a value, `t` is assumed.
+    Defaults to `f`.
+
+`-logtostderr`=_{t|f}_::
+    Whether to log to standard error or files. If `f`, logs are written to
+    `log_dir` (below).
+    Defaults to `t`.
+
+`-alsologtostderr`=_{t|f}_::
+    Whether to log to stderr in addition to files, if `logtostderr` is `f`.
+    Defaults to `f`.
+
+`-log_dir`=_{logdir}_::
+    The directory to write log files to. Only used if `logtostderr` is `f`.
+    If `dir` cannot be used, it will fall back to the temporary directory.
+    Defaults to the temporary directory.
+
+In addition, there are other common glog flags that are detailed in usage
+output.
+
+
+== Signals
+
+`xq-api` responds to HUP by reloading the repodata it was given on the command
+line.
+
+After the server has been started, it responds to TERM and INT signals by
+attempting to gracefully shut down the server.
+
+
+== Repodata
+
+When passing repodata to `xq-api`, it expects to receive either a directory
+containing one or more repodata files or an individual repodata file. For
+example, to serve repodata from the current machine, one can start xq-api with
+the following (which will match the vast majority of repositories, if any are
+synced):
+
+    $ xq-api /var/db/xbps/http*/*-repodata
+    loading repodata...
+    loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64-repodata
+    ...
+
+Alternatively, you can pass directories:
+
+    $ xq-api /var/db/xbps/http*
+    loading repodata...
+    loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64-repodata
+    ...
+
+
+== Responses
+
+All responses from xq-api, with the exception of redirects, yield JSON output of
+the form `{"data": <RequestedThing>}`, where RequestedThing is either an object
+or an array.
+
+Unexpected or invalid paths respond with 404 and an empty `{}` object.
+
+
+== Paths
+
+The following paths are available in xq-api.
+
+[NOTE]
+All example responses are pretty-printed for convenience. xq-api does not
+pretty-print JSON.
+
+
+=== /v1/archs
+
+Responds with an array of strings identifying valid architectures for use with
+other paths.
+
+.Example
+
+[source,json]
+----
+{
+  "data": [
+    "aarch64",
+    "aarch64-musl",
+    "armv6l",
+    "armv6l-musl",
+    "armv7l",
+    "armv7l-musl",
+    "i686",
+    "i686-musl",
+    "x86_64",
+    "x86_64-musl"
+  ]
+}
+----
+
+=== /v1/packages/{arch}
+
+Responds with an array of strings identifying valid packages for `arch`.
+
+The array is lexicographically ordered case-sensitively.
+
+.Parameters
+`arch`::
+    An architecture served by xq-api.
+    Valid architectures are returned from `/v1/archs`.
+
+.Example
+[source,json]
+----
+{
+  "data": [
+    "0ad",
+    "0ad-32bit",
+    "0ad-data",
+    "2048-qt",
+    "2bwm",
+    "... EXAMPLE ELLIPSIZED ...",
+    "zzuf",
+    "zzuf-32bit"
+  ]
+}
+----
+
+
+=== /v1/packages/{arch}/{package}
+
+Responds with an object describing the package from repodata. 
+
+This is intended to be the same as what you can see by looking up the package
+with xbps-query(1) with some alterations:
+
+  * `pkgver` is split into `name`, `version`, and `revision` JSON fields.
+    `pkgver` itself is not served.
+
+  * Field names with hyphens in xbps-query have underscores in xq-api (such as
+    `filename_sha256`). This is for convenience when using these fields in
+    languages like Javascript.
+
+  * Timestamps are formated in RFC 3339. This is, again, for convenience in
+    working with other languages.
+
+.Parameters
+`arch`::
+    An architecture served by xq-api.
+    Valid architectures are returned from `/v1/archs`.
+
+`package`::
+    A package under `arch`.
+    Valid package names are retruend from `/v1/packages/{arch}`.
+
+.Data Fields
+Any field that is empty, zero, or false is omitted from the response as it is
+the default value for that field.
+
+In the list below, `[]string` is an array of strings.
+
+  * *name*: string
+  * *version*: string
+  * *revision*: integer
+  * *architecture*: string
+  * *build_date*: string (RFC 3339 timestamp)
+  * *build_options*: string
+  * *filename_sha256*: string
+  * *filename_size*: integer
+  * *homepage*: string (url)
+  * *installed_size*: integer
+  * *license*: string
+  * *maintainer*: string
+  * *short_desc*: string
+  * *preserve*: bool (only set if `true`)
+  * *source_revisions*: string
+  * *run_depends*: []string
+  * *shlib_requires*: []string
+  * *shlib_provides*: []string
+  * *conflicts*: []string
+  * *reverts*: []string
+  * *replaces*: []string
+  * *alternatives*:
+    map[string][]string (a map of strings to arrays of strings, such as `{
+    "key": ["values"] }`)
+  * *conf_files*: []string
+
+.Example
+[source,json]
+----
+{
+  "data": {
+    "name": "retrap",
+    "version": "1.0.1",
+    "revision": 2,
+    "architecture": "x86_64",
+    "build_date": "2019-01-10T09:03:00Z",
+    "filename_sha256": "35eb56b97d20b04afe6bb40f471b849e4f4022d999bbbc0e4b48fc78e68ffe14",
+    "filename_size": 1065888,
+    "homepage": "https://github.com/nilium/retrap",
+    "installed_size": 2365759,
+    "license": "BSD-2-Clause",
+    "maintainer": "Noel Cower <ncower@gmail.com>",
+    "short_desc": "Remap signals and forward them to a child process",
+    "run_depends": [
+      "glibc>=2.28_1"
+    ],
+    "shlib_requires": [
+      "libpthread.so.0",
+      "libc.so.6"
+    ]
+  }
+}
+----
+
+
+=== /v1/query/{arch}?q={query}
+
+Responds with an array containing packages under `arch` that match the `query`.
+The resulting package objects contain only a subset of their full fields.
+
+.Parameters
+`arch`::
+    An architecture served by xq-api.
+    Valid architectures are returned from `/v1/archs`.
+`query`::
+    A query string to filter results by. Only `pkgver` (the combination of
+    `name`, `version`, and `revison`) and `short_desc` are searched. If empty,
+    all packages are returned.
+
+.Data Fields
+Any field that is empty, zero, or false is omitted from the response as it is
+the default value for that field.
+
+  * *name*: string
+  * *version*: string
+  * *revision*: integer
+  * *short_desc*: string
+
+.Example
+[source,json]
+----
+{
+  "data": [
+    {
+      "name": "retrap",
+      "version": "1.0.1",
+      "revision": 2,
+      "short_desc": "Remap signals and forward them to a child process"
+    }
+  ]
+}
+----
+
+
+== Building xq-api
+
+To build xq-api, you can use make:
+
+    $ make xq-api
+
+And to build the manpage:
+
+    $ make xq-api.8
+
+Or, to build both:
+
+    $ make
+
+Otherwise, to build xq-api with the Go tool from within the source tree:
+
+    $ go build go.spiff.io/xq-api

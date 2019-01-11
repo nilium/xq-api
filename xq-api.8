@@ -1,0 +1,690 @@
+'\" t
+.\"     Title: xq-api
+.\"    Author: Noel Cower
+.\" Generator: Asciidoctor 1.5.8
+.\"      Date: 2019-01-11
+.\"    Manual: XQ-API
+.\"    Source: XQ-API
+.\"  Language: English
+.\"
+.TH "XQ\-API" "8" "2019-01-11" "XQ\-API" "XQ\-API"
+.ie \n(.g .ds Aq \(aq
+.el       .ds Aq '
+.ss \n[.ss] 0
+.nh
+.ad l
+.de URL
+\fI\\$2\fP <\\$1>\\$3
+..
+.als MTO URL
+.if \n[.g] \{\
+.  mso www.tmac
+.  am URL
+.    ad l
+.  .
+.  am MTO
+.    ad l
+.  .
+.  LINKSTYLE blue R < >
+.\}
+.SH "NAME"
+xq\-api \- serve XBPS repodata over HTTP
+.SH "SYNOPSIS"
+.sp
+\fBxq\-api\fP [\fIOPTIONS\fP] [\-\-] <_REPODATA..._>`
+.SH "DESCRIPTION"
+.sp
+\fBxq\-api\fP serves XBPS repodata over HTTP, formatting its responses as JSON.
+It loads repodata into memory prior to serving it.
+.SH "OPTIONS"
+.sp
+\f(CR\-h\fP, \f(CR\-help\fP
+.RS 4
+Print all CLI flags. This includes glog flags not described below that are
+primarily used for debugging and log rotation.
+.RE
+.sp
+\f(CR\-net\fP=\fI{network}\fP
+.RS 4
+The type of network address to listen on. May be one of \f(CRunix\fP (Unix domain
+socket), \f(CRtcp\fP, \f(CRtcp4\fP (IPv4 only), or \f(CRtcp6\fP (IPv6 only).
+Defaults to \f(CRtcp\fP.
+.RE
+.sp
+\f(CR\-listen\fP=\fI{addr}\fP
+.RS 4
+The address to listen on. If \f(CR\-net\fP is \f(CRunix\fP, this is a path to the Unix
+domain socket to create.
+Defaults to \f(CR127.0.0.1:8197\fP, regardless of what \f(CR\-net\fP is.
+.RE
+.sp
+\f(CR\-max\-queries\fP=\fI{n}\fP
+.RS 4
+The maximum number of query requests that can run in parallel. If more than
+\f(CRn\fP query requests are made in parallel, they will block until others
+complete.
+Defaults to \f(CR16\fP.
+.RE
+.sp
+\f(CR\-log\-access\fP=\fI{t|f}\fP
+.RS 4
+Whether to emit access logs. Requests that get a 404, 304, or 0 response are
+not logged. If passed without a value, \f(CRt\fP is assumed.
+Defaults to \f(CRf\fP.
+.RE
+.sp
+\f(CR\-logtostderr\fP=\fI{t|f}\fP
+.RS 4
+Whether to log to standard error or files. If \f(CRf\fP, logs are written to
+\f(CRlog_dir\fP (below).
+Defaults to \f(CRt\fP.
+.RE
+.sp
+\f(CR\-alsologtostderr\fP=\fI{t|f}\fP
+.RS 4
+Whether to log to stderr in addition to files, if \f(CRlogtostderr\fP is \f(CRf\fP.
+Defaults to \f(CRf\fP.
+.RE
+.sp
+\f(CR\-log_dir\fP=\fI{logdir}\fP
+.RS 4
+The directory to write log files to. Only used if \f(CRlogtostderr\fP is \f(CRf\fP.
+If \f(CRdir\fP cannot be used, it will fall back to the temporary directory.
+Defaults to the temporary directory.
+.RE
+.sp
+In addition, there are other common glog flags that are detailed in usage
+output.
+.SH "SIGNALS"
+.sp
+\f(CRxq\-api\fP responds to HUP by reloading the repodata it was given on the command
+line.
+.sp
+After the server has been started, it responds to TERM and INT signals by
+attempting to gracefully shut down the server.
+.SH "REPODATA"
+.sp
+When passing repodata to \f(CRxq\-api\fP, it expects to receive either a directory
+containing one or more repodata files or an individual repodata file. For
+example, to serve repodata from the current machine, one can start xq\-api with
+the following (which will match the vast majority of repositories, if any are
+synced):
+.sp
+.if n .RS 4
+.nf
+$ xq\-api /var/db/xbps/http*/*\-repodata
+loading repodata...
+loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64\-repodata
+\&...
+.fi
+.if n .RE
+.sp
+Alternatively, you can pass directories:
+.sp
+.if n .RS 4
+.nf
+$ xq\-api /var/db/xbps/http*
+loading repodata...
+loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64\-repodata
+\&...
+.fi
+.if n .RE
+.SH "RESPONSES"
+.sp
+All responses from xq\-api, with the exception of redirects, yield JSON output of
+the form \f(CR{"data": <RequestedThing>}\fP, where RequestedThing is either an object
+or an array.
+.sp
+Unexpected or invalid paths respond with 404 and an empty \f(CR{}\fP object.
+.SH "PATHS"
+.sp
+The following paths are available in xq\-api.
+.if n .sp
+.RS 4
+.it 1 an-trap
+.nr an-no-space-flag 1
+.nr an-break-flag 1
+.br
+.ps +1
+.B Note
+.ps -1
+.br
+.sp
+All example responses are pretty\-printed for convenience. xq\-api does not
+pretty\-print JSON.
+.sp .5v
+.RE
+.SS "/v1/archs"
+.sp
+Responds with an array of strings identifying valid architectures for use with
+other paths.
+.sp
+.B Example
+.br
+.sp
+.if n .RS 4
+.nf
+{
+  "data": [
+    "aarch64",
+    "aarch64\-musl",
+    "armv6l",
+    "armv6l\-musl",
+    "armv7l",
+    "armv7l\-musl",
+    "i686",
+    "i686\-musl",
+    "x86_64",
+    "x86_64\-musl"
+  ]
+}
+.fi
+.if n .RE
+.SS "/v1/packages/{arch}"
+.sp
+Responds with an array of strings identifying valid packages for \f(CRarch\fP.
+.sp
+The array is lexicographically ordered case\-sensitively.
+.sp
+.B Parameters
+.br
+.sp
+\f(CRarch\fP
+.RS 4
+An architecture served by xq\-api.
+Valid architectures are returned from \f(CR/v1/archs\fP.
+.RE
+.sp
+.B Example
+.br
+.sp
+.if n .RS 4
+.nf
+{
+  "data": [
+    "0ad",
+    "0ad\-32bit",
+    "0ad\-data",
+    "2048\-qt",
+    "2bwm",
+    "... EXAMPLE ELLIPSIZED ...",
+    "zzuf",
+    "zzuf\-32bit"
+  ]
+}
+.fi
+.if n .RE
+.SS "/v1/packages/{arch}/{package}"
+.sp
+Responds with an object describing the package from repodata.
+.sp
+This is intended to be the same as what you can see by looking up the package
+with xbps\-query(1) with some alterations:
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\f(CRpkgver\fP is split into \f(CRname\fP, \f(CRversion\fP, and \f(CRrevision\fP JSON fields.
+\f(CRpkgver\fP itself is not served.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+Field names with hyphens in xbps\-query have underscores in xq\-api (such as
+\f(CRfilename_sha256\fP). This is for convenience when using these fields in
+languages like Javascript.
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+Timestamps are formated in RFC 3339. This is, again, for convenience in
+working with other languages.
+.RE
+.sp
+.B Parameters
+.br
+.sp
+\f(CRarch\fP
+.RS 4
+An architecture served by xq\-api.
+Valid architectures are returned from \f(CR/v1/archs\fP.
+.RE
+.sp
+\f(CRpackage\fP
+.RS 4
+A package under \f(CRarch\fP.
+Valid package names are retruend from \f(CR/v1/packages/{arch}\fP.
+.RE
+.sp
+.B Data Fields
+.br
+Any field that is empty, zero, or false is omitted from the response as it is
+the default value for that field.
+.sp
+In the list below, \f(CR[]string\fP is an array of strings.
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBname\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBversion\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBrevision\fP: integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBarchitecture\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBbuild_date\fP: string (RFC 3339 timestamp)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBbuild_options\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBfilename_sha256\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBfilename_size\fP: integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBhomepage\fP: string (url)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBinstalled_size\fP: integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBlicense\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBmaintainer\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBshort_desc\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBpreserve\fP: bool (only set if \f(CRtrue\fP)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBsource_revisions\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBrun_depends\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBshlib_requires\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBshlib_provides\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBconflicts\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBreverts\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBreplaces\fP: []string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBalternatives\fP:
+map[string][]string (a map of strings to arrays of strings, such as \f(CR{
+"key": ["values"] }\fP)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBconf_files\fP: []string
+.RE
+.sp
+.B Example
+.br
+.sp
+.if n .RS 4
+.nf
+{
+  "data": {
+    "name": "retrap",
+    "version": "1.0.1",
+    "revision": 2,
+    "architecture": "x86_64",
+    "build_date": "2019\-01\-10T09:03:00Z",
+    "filename_sha256": "35eb56b97d20b04afe6bb40f471b849e4f4022d999bbbc0e4b48fc78e68ffe14",
+    "filename_size": 1065888,
+    "homepage": "https://github.com/nilium/retrap",
+    "installed_size": 2365759,
+    "license": "BSD\-2\-Clause",
+    "maintainer": "Noel Cower <ncower@gmail.com>",
+    "short_desc": "Remap signals and forward them to a child process",
+    "run_depends": [
+      "glibc>=2.28_1"
+    ],
+    "shlib_requires": [
+      "libpthread.so.0",
+      "libc.so.6"
+    ]
+  }
+}
+.fi
+.if n .RE
+.SS "/v1/query/{arch}?q={query}"
+.sp
+Responds with an array containing packages under \f(CRarch\fP that match the \f(CRquery\fP.
+The resulting package objects contain only a subset of their full fields.
+.sp
+.B Parameters
+.br
+.sp
+\f(CRarch\fP
+.RS 4
+An architecture served by xq\-api.
+Valid architectures are returned from \f(CR/v1/archs\fP.
+.RE
+.sp
+\f(CRquery\fP
+.RS 4
+A query string to filter results by. Only \f(CRpkgver\fP (the combination of
+\f(CRname\fP, \f(CRversion\fP, and \f(CRrevison\fP) and \f(CRshort_desc\fP are searched. If empty,
+all packages are returned.
+.RE
+.sp
+.B Data Fields
+.br
+Any field that is empty, zero, or false is omitted from the response as it is
+the default value for that field.
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBname\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBversion\fP: string
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBrevision\fP: integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBshort_desc\fP: string
+.RE
+.sp
+.B Example
+.br
+.sp
+.if n .RS 4
+.nf
+{
+  "data": [
+    {
+      "name": "retrap",
+      "version": "1.0.1",
+      "revision": 2,
+      "short_desc": "Remap signals and forward them to a child process"
+    }
+  ]
+}
+.fi
+.if n .RE
+.SH "BUILDING XQ\-API"
+.sp
+To build xq\-api, you can use make:
+.sp
+.if n .RS 4
+.nf
+$ make xq\-api
+.fi
+.if n .RE
+.sp
+And to build the manpage:
+.sp
+.if n .RS 4
+.nf
+$ make xq\-api.8
+.fi
+.if n .RE
+.sp
+Or, to build both:
+.sp
+.if n .RS 4
+.nf
+$ make
+.fi
+.if n .RE
+.sp
+Otherwise, to build xq\-api with the Go tool from within the source tree:
+.sp
+.if n .RS 4
+.nf
+$ go build go.spiff.io/xq\-api
+.fi
+.if n .RE
+.SH "AUTHOR"
+.sp
+Noel Cower
