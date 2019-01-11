@@ -100,8 +100,8 @@ func createServer(api *Querier, logAccess bool) *http.Server {
 	mux.GET("/v1/query/:arch", api.Query)
 	mux.HEAD("/v1/query/:arch", api.Query)
 
-	mux.GET("/v1/packages/:arch/", api.PackageList)
-	mux.HEAD("/v1/packages/:arch/", api.PackageList)
+	mux.GET("/v1/packages/:arch", api.PackageList)
+	mux.HEAD("/v1/packages/:arch", api.PackageList)
 
 	mux.GET("/v1/packages/:arch/:package", api.Package)
 	mux.HEAD("/v1/packages/:arch/:package", api.Package)
