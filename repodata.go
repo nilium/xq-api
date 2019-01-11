@@ -200,6 +200,11 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 			_, p.Version, p.Revision, _ = ParseVersionedName(p.PackageVersion)
 		}
 
+		// Do naive case normalization for searches -- shouldn't have an impact on these
+		// given that everything in repodata is currently ASCII.
+		p.SearchPackageVersion = strings.ToLower(p.PackageVersion)
+		p.SearchShortDesc = strings.ToLower(p.ShortDesc)
+
 		p.ETag, err = p.computeETag()
 		if err != nil {
 			// This really shouldn't happen -- it would mean JSON encoding of packages
@@ -369,6 +374,10 @@ type packageData struct {
 	Alternatives map[string][]string `plist:"alternatives" json:"alternatives,omitempty"`
 
 	ConfFiles []string `plist:"conf_files" json:"conf_files,omitempty"`
+
+	// Lower-case versions of PackageVersion and ShortDesc for searching
+	SearchPackageVersion string `plist:"-" json:"-"`
+	SearchShortDesc      string `plist:"-" json:"-"`
 
 	Index int    `plist:"-" json:"-"`
 	ETag  string `plist:"-" json:"-"`

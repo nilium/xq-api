@@ -207,8 +207,8 @@ func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httpro
 	sub := rd.Index()
 	if query != "" {
 		sub = sub.Filter(func(p *packageData) bool {
-			return strings.Contains(strings.ToLower(p.PackageVersion), query) ||
-				strings.Contains(strings.ToLower(p.ShortDesc), query)
+			return strings.Contains(p.SearchPackageVersion, query) ||
+				strings.Contains(p.SearchShortDesc, query)
 		})
 	}
 
