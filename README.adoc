@@ -12,7 +12,7 @@ xq-api - serve XBPS repodata over HTTP
 
 == Synopsis
 
-*xq-api* [_OPTIONS_] [--] <_REPODATA..._>`
+`xq-api [OPTIONS] [--] <REPODATA...>`
 
 
 == Description
