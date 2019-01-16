@@ -184,7 +184,6 @@ func (qr *Querier) Package(w http.ResponseWriter, req *http.Request, params http
 }
 
 func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httprouter.Params) {
-
 	query := strings.ToLower(req.FormValue("q"))
 	arch := params.ByName("arch")
 	rd := qr.getData().Arch(arch)
