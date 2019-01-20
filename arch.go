@@ -135,7 +135,7 @@ func (a *archIndex) loadFile(path string) error {
 
 	packages = len(rd.Index()) - packages
 
-	glog.V(2).Infof("loaded %s repo=%s new_packages=%d",
+	glog.V(1).Infof("loaded %s repo=%s new_packages=%d",
 		path, repo, packages)
 
 	return nil
