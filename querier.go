@@ -212,10 +212,12 @@ func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httpro
 	}
 
 	type shortEntry struct {
-		Name      string `json:"name"`
-		Version   string `json:"version"`
-		Revision  int    `json:"revision"`
-		ShortDesc string `json:"short_desc,omitempty"`
+		Name         string `json:"name"`
+		Version      string `json:"version"`
+		Revision     int    `json:"revision"`
+		FilenameSize int64  `json:"filename_size"`
+		Repository   string `json:"repository,omitempty"`
+		ShortDesc    string `json:"short_desc,omitempty"`
 	}
 
 	response := struct {
@@ -226,10 +228,12 @@ func (qr *Querier) Query(w http.ResponseWriter, req *http.Request, params httpro
 
 	for i, p := range sub {
 		response.Data[i] = shortEntry{
-			Name:      p.Name,
-			Version:   p.Version,
-			Revision:  p.Revision,
-			ShortDesc: p.ShortDesc,
+			Name:         p.Name,
+			Version:      p.Version,
+			Revision:     p.Revision,
+			FilenameSize: p.FilenameSize,
+			Repository:   p.Repository,
+			ShortDesc:    p.ShortDesc,
 		}
 	}
 
