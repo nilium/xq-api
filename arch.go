@@ -118,6 +118,8 @@ func (a *archIndex) loadFile(path string) error {
 
 	repo, ok := repositoryFromPath(path)
 	if !ok {
+		glog.V(1).Infof("unable to determine repository for %s; defaulting to %s",
+			path, defaultRepository)
 		repo = defaultRepository
 	}
 	arch := filepath.Base(strings.TrimSuffix(path, "-repodata"))
@@ -142,26 +144,53 @@ func (a *archIndex) loadFile(path string) error {
 }
 
 func repositoryFromPath(path string) (repo string, ok bool) {
-	const currentSep = "_current_"
-
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", false
 	}
+	dir := filepath.Dir(abs)
 
-	base := filepath.Base(filepath.Dir(abs))
-	if cidx := strings.LastIndex(base, currentSep); cidx > -1 {
-		repo = base[cidx+len(currentSep):]
+	// Look for foo/bar/current/path-a/path-b in path and pull out
+	// everything from "current" and lower.
+	repo, ok = repositoryFromPathList(dir)
+	if !ok {
+		repo, ok = repositoryFromBase(filepath.Base(dir))
+	}
+	return repo, ok
+}
+
+func repositoryFromBase(path string) (repo string, ok bool) {
+	const currentSep = "_current_"
+	if sep := strings.LastIndex(path, currentSep); sep > -1 {
+		repo = path[sep+len(currentSep):]
 		if repo != "" {
 			return strings.Replace(repo, "_", "/", -1), true
 		}
 	}
-
-	sep := strings.LastIndexByte(base, '_')
-	if sep == -1 || sep >= len(base)-1 {
+	sep := strings.LastIndexByte(path, '_')
+	if sep == -1 || sep >= len(path)-1 {
 		return "", false
 	}
-	return base[sep+1:], true
+	return path[sep+1:], true
+}
+
+func repositoryFromPathList(path string) (repo string, ok bool) {
+	list := strings.Split(path, string(filepath.Separator))
+	nth := -1
+	for i := len(list) - 1; i >= 0; i-- {
+		if list[i] == "current" {
+			nth = i
+			break
+		}
+	}
+	if nth == -1 {
+		return "", false
+	}
+	list = list[nth:]
+	if len(list) > 1 { // drop "current" if there are more identifiers
+		list = list[1:]
+	}
+	return strings.Join(list, "/"), true
 }
 
 func (a *archIndex) computeETag() string {
