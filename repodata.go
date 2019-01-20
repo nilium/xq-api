@@ -355,7 +355,7 @@ type packageData struct {
 	Version        string `plist:"-" json:"version,omitempty"`
 	Revision       int    `plist:"-" json:"revision,omitempty"`
 
-	Repository     string  `plist:"-" json:"repository"`
+	Repository     string  `plist:"-" json:"repository,omitempty"`
 	Architecture   string  `plist:"architecture" json:"architecture,omitempty"`
 	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty"`
 	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty"`
