@@ -76,6 +76,7 @@ func (a *archIndex) loadPath(path string) error {
 	}
 
 	if fi.IsDir() {
+		glog.V(1).Infof("walking %s for repodata files", path)
 		return a.loadDir(path)
 	}
 	return a.loadFile(path)
@@ -85,9 +86,12 @@ func (a *archIndex) loadDir(path string) error {
 	// Collect a list of -repodata files and load them.
 	var files []string
 	err := filepath.Walk(path, func(path string, wfi os.FileInfo, err error) error {
-		if !wfi.IsDir() && strings.HasSuffix(path, "-repodata") {
+		if wfi.IsDir() {
+			glog.V(2).Infof("walking %s for repodata files", path)
+		} else if strings.HasSuffix(path, "-repodata") {
 			files = append(files, path)
 		}
+		// TODO: Follow symlinks?
 		return nil
 	})
 	if err != nil {
@@ -112,6 +116,10 @@ func (a *archIndex) loadFile(path string) error {
 		}
 	}
 
+	repo, ok := repositoryFromPath(path)
+	if !ok {
+		repo = defaultRepository
+	}
 	arch := filepath.Base(strings.TrimSuffix(path, "-repodata"))
 	rd := a.archs[arch]
 	if rd == nil {
@@ -119,12 +127,41 @@ func (a *archIndex) loadFile(path string) error {
 		a.archs[arch] = rd
 	}
 
-	err := rd.LoadRepo(path)
+	packages := len(rd.Index())
+	err := rd.LoadRepo(path, repo)
 	if err != nil {
 		return &os.PathError{Path: path, Err: err, Op: "load"}
 	}
 
+	packages = len(rd.Index()) - packages
+
+	glog.V(2).Infof("loaded %s repo=%s new_packages=%d",
+		path, repo, packages)
+
 	return nil
+}
+
+func repositoryFromPath(path string) (repo string, ok bool) {
+	const currentSep = "_current_"
+
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+
+	base := filepath.Base(filepath.Dir(abs))
+	if cidx := strings.LastIndex(base, currentSep); cidx > -1 {
+		repo = base[cidx+len(currentSep):]
+		if repo != "" {
+			return strings.Replace(repo, "_", "/", -1), true
+		}
+	}
+
+	sep := strings.LastIndexByte(base, '_')
+	if sep == -1 || sep >= len(base)-1 {
+		return "", false
+	}
+	return base[sep+1:], true
 }
 
 func (a *archIndex) computeETag() string {

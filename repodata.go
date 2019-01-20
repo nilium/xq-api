@@ -26,6 +26,7 @@ import (
 var etagEncoding = base64.RawURLEncoding
 
 const repoIndexFile = "index.plist"
+const defaultRepository = "current"
 
 var errNoIndex = fmt.Errorf("index not found: %s", repoIndexFile)
 
@@ -109,14 +110,14 @@ func NewRepoData() *RepoData {
 	}
 }
 
-func (rd *RepoData) LoadRepo(path string) error {
+func (rd *RepoData) LoadRepo(path, repo string) error {
 	fi, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer fi.Close()
 
-	return rd.ReadRepo(fi)
+	return rd.ReadRepo(fi, repo)
 }
 
 func (rd *RepoData) Index() packageIndex {
@@ -133,7 +134,7 @@ func (rd *RepoData) NameIndex() []string {
 	return rd.nameIndex
 }
 
-func (rd *RepoData) ReadRepo(r io.Reader) error {
+func (rd *RepoData) ReadRepo(r io.Reader, repo string) error {
 	gr, err := gzip.NewReader(r)
 	if err != nil {
 		return err
@@ -148,7 +149,7 @@ func (rd *RepoData) ReadRepo(r io.Reader) error {
 		}
 
 		if hdr.Name == repoIndexFile {
-			return rd.ReadRepoIndex(tr)
+			return rd.ReadRepoIndex(tr, repo)
 		}
 	}
 	return errNoIndex
@@ -172,7 +173,7 @@ func copyToTempFile(r io.Reader) (*os.File, error) {
 	return tmpfile, nil
 }
 
-func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
+func (rd *RepoData) ReadRepoIndex(r io.Reader, repo string) error {
 	var err error
 	rs, ok := r.(io.ReadSeeker)
 	if !ok {
@@ -182,6 +183,10 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 		}
 		defer f.Close()
 		rs = f
+	}
+
+	if repo == "" {
+		repo = defaultRepository
 	}
 
 	pkg := packageMap{}
@@ -199,6 +204,8 @@ func (rd *RepoData) ReadRepoIndex(r io.Reader) error {
 			p.Name = k
 			_, p.Version, p.Revision, _ = ParseVersionedName(p.PackageVersion)
 		}
+
+		p.Repository = repo
 
 		// Do naive case normalization for searches -- shouldn't have an impact on these
 		// given that everything in repodata is currently ASCII.
@@ -348,6 +355,7 @@ type packageData struct {
 	Version        string `plist:"-" json:"version,omitempty"`
 	Revision       int    `plist:"-" json:"revision,omitempty"`
 
+	Repository     string  `plist:"-" json:"repository"`
 	Architecture   string  `plist:"architecture" json:"architecture,omitempty"`
 	BuildDate      timeVal `plist:"build-date" json:"build_date,omitempty"`
 	BuildOptions   string  `plist:"build-options" json:"build_options,omitempty"`
