@@ -2,12 +2,12 @@
 .\"     Title: xq-api
 .\"    Author: Noel Cower
 .\" Generator: Asciidoctor 1.5.8
-.\"      Date: 2019-01-11
+.\"      Date: 2019-01-20
 .\"    Manual: XQ-API
 .\"    Source: XQ-API
 .\"  Language: English
 .\"
-.TH "XQ\-API" "8" "2019-01-11" "XQ\-API" "XQ\-API"
+.TH "XQ\-API" "8" "2019-01-20" "XQ\-API" "XQ\-API"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -129,6 +129,10 @@ loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64\-repodata
 \&...
 .fi
 .if n .RE
+.sp
+Symbolic links are not followed when walking a directory to find repodata. If
+you need this, please open an issue on \c
+.URL "https://github.com/nilium/xq\-api" "" "."
 .SH "RESPONSES"
 .sp
 All responses from xq\-api, with the exception of redirects, yield JSON output of
@@ -311,6 +315,17 @@ In the list below, \f(CR[]string\fP is an array of strings.
 .  IP \(bu 2.3
 .\}
 \fBrevision\fP: integer
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBrepository\fP: string
 .RE
 .sp
 .RS 4
@@ -545,6 +560,7 @@ map[string][]string (a map of strings to arrays of strings, such as \f(CR{
     "name": "retrap",
     "version": "1.0.1",
     "revision": 2,
+    "repository": "current",
     "architecture": "x86_64",
     "build_date": "2019\-01\-10T09:03:00Z",
     "filename_sha256": "35eb56b97d20b04afe6bb40f471b849e4f4022d999bbbc0e4b48fc78e68ffe14",
@@ -588,8 +604,6 @@ all packages are returned.
 .sp
 .B Data Fields
 .br
-Any field that is empty, zero, or false is omitted from the response as it is
-the default value for that field.
 .sp
 .RS 4
 .ie n \{\
@@ -632,7 +646,29 @@ the default value for that field.
 .  sp -1
 .  IP \(bu 2.3
 .\}
-\fBshort_desc\fP: string
+\fBfilename_size\fP: integer (bytes)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBrepository\fP: string (omitted if empty)
+.RE
+.sp
+.RS 4
+.ie n \{\
+\h'-04'\(bu\h'+03'\c
+.\}
+.el \{\
+.  sp -1
+.  IP \(bu 2.3
+.\}
+\fBshort_desc\fP: string (omitted if empty)
 .RE
 .sp
 .B Example
@@ -646,6 +682,8 @@ the default value for that field.
       "name": "retrap",
       "version": "1.0.1",
       "revision": 2,
+      "filename_size": 1065888,
+      "repository": "current",
       "short_desc": "Remap signals and forward them to a child process"
     }
   ]
@@ -685,6 +723,13 @@ Otherwise, to build xq\-api with the Go tool from within the source tree:
 $ go build go.spiff.io/xq\-api
 .fi
 .if n .RE
+.SH "REPORTING ISSUES"
+.sp
+If you encounter a bug in xq\-api, or want to request a feature or something
+else, please open an issue on the project website if one doesn\(cqt already exist:
+.URL "https://github.com/nilium/xq\-api" "" "."
+.sp
+You can also submit pull requests through the project site.
 .SH "AUTHOR"
 .sp
 Noel Cower

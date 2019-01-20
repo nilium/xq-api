@@ -95,6 +95,9 @@ Alternatively, you can pass directories:
     loading /var/db/xbps/http___alpha_de_repo_voidlinux_org_current/x86_64-repodata
     ...
 
+Symbolic links are not followed when walking a directory to find repodata. If
+you need this, please open an issue on <https://github.com/nilium/xq-api>.
+
 
 == Responses
 
@@ -203,6 +206,7 @@ In the list below, `[]string` is an array of strings.
   * *name*: string
   * *version*: string
   * *revision*: integer
+  * *repository*: string
   * *architecture*: string
   * *build_date*: string (RFC 3339 timestamp)
   * *build_options*: string
@@ -234,6 +238,7 @@ In the list below, `[]string` is an array of strings.
     "name": "retrap",
     "version": "1.0.1",
     "revision": 2,
+    "repository": "current",
     "architecture": "x86_64",
     "build_date": "2019-01-10T09:03:00Z",
     "filename_sha256": "35eb56b97d20b04afe6bb40f471b849e4f4022d999bbbc0e4b48fc78e68ffe14",
@@ -270,13 +275,13 @@ The resulting package objects contain only a subset of their full fields.
     all packages are returned.
 
 .Data Fields
-Any field that is empty, zero, or false is omitted from the response as it is
-the default value for that field.
 
   * *name*: string
   * *version*: string
   * *revision*: integer
-  * *short_desc*: string
+  * *filename_size*: integer (bytes)
+  * *repository*: string (omitted if empty)
+  * *short_desc*: string (omitted if empty)
 
 .Example
 [source,json]
@@ -287,6 +292,8 @@ the default value for that field.
       "name": "retrap",
       "version": "1.0.1",
       "revision": 2,
+      "filename_size": 1065888,
+      "repository": "current",
       "short_desc": "Remap signals and forward them to a child process"
     }
   ]
@@ -311,3 +318,12 @@ Or, to build both:
 Otherwise, to build xq-api with the Go tool from within the source tree:
 
     $ go build go.spiff.io/xq-api
+
+
+== Reporting Issues
+
+If you encounter a bug in xq-api, or want to request a feature or something
+else, please open an issue on the project website if one doesn't already exist:
+<https://github.com/nilium/xq-api>.
+
+You can also submit pull requests through the project site.
