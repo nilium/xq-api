@@ -79,13 +79,18 @@ func (a *archIndex) loadPath(path string) error {
 		glog.V(1).Infof("walking %s for repodata files", path)
 		return a.loadDir(path)
 	}
-	return a.loadFile(path)
+	return a.loadFile(path, "")
 }
 
-func (a *archIndex) loadDir(path string) error {
+func (a *archIndex) loadDir(searchRoot string) error {
+	searchRoot, err := filepath.Abs(searchRoot)
+	if err != nil {
+		return err
+	}
+
 	// Collect a list of -repodata files and load them.
 	var files []string
-	err := filepath.Walk(path, func(path string, wfi os.FileInfo, err error) error {
+	err = filepath.Walk(searchRoot, func(path string, wfi os.FileInfo, err error) error {
 		if wfi.IsDir() {
 			glog.V(2).Infof("walking %s for repodata files", path)
 		} else if strings.HasSuffix(path, "-repodata") {
@@ -97,15 +102,16 @@ func (a *archIndex) loadDir(path string) error {
 	if err != nil {
 		return err
 	}
-	for _, path = range files {
-		if err = a.loadFile(path); err != nil {
+	for _, path := range files {
+		repo := repositoryFromFileSearchRoot(searchRoot, path)
+		if err = a.loadFile(path, repo); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (a *archIndex) loadFile(path string) error {
+func (a *archIndex) loadFile(path, repo string) error {
 	glog.Infof("loading %s", path)
 
 	if !strings.HasSuffix(path, "-repodata") {
@@ -116,12 +122,16 @@ func (a *archIndex) loadFile(path string) error {
 		}
 	}
 
-	repo, ok := repositoryFromPath(path)
-	if !ok {
-		glog.V(1).Infof("unable to determine repository for %s; defaulting to %s",
-			path, defaultRepository)
-		repo = defaultRepository
+	if repo == "" {
+		var ok bool
+		repo, ok = repositoryFromPath(path)
+		if !ok {
+			glog.V(1).Infof("unable to determine repository for %s; defaulting to %s",
+				path, defaultRepository)
+			repo = defaultRepository
+		}
 	}
+
 	arch := filepath.Base(strings.TrimSuffix(path, "-repodata"))
 	rd := a.archs[arch]
 	if rd == nil {
@@ -141,6 +151,21 @@ func (a *archIndex) loadFile(path string) error {
 		path, repo, packages)
 
 	return nil
+}
+
+func repositoryFromFileSearchRoot(searchRoot, path string) string {
+	// Add compatibility check when using /var/db/xbps repodata
+	if searchRoot == "/var/db/xbps" {
+		return ""
+	}
+	repo := filepath.ToSlash(filepath.Dir(path))
+	repo = strings.TrimPrefix(repo, searchRoot)
+	repo = strings.TrimPrefix(repo, "/")
+	repo = strings.TrimPrefix(repo, defaultRepository+"/")
+	if repo == "" || repo == "/" || repo == "." {
+		repo = defaultRepository
+	}
+	return repo
 }
 
 func repositoryFromPath(path string) (repo string, ok bool) {
