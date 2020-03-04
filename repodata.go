@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"crypto/sha1"
 	"encoding/base64"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/klauspost/compress/zstd"
 	"golang.org/x/tools/container/intsets"
 	"howett.net/plist"
 )
@@ -134,25 +136,70 @@ func (rd *RepoData) NameIndex() []string {
 	return rd.nameIndex
 }
 
-func (rd *RepoData) ReadRepo(r io.Reader, repo string) error {
-	gr, err := gzip.NewReader(r)
+func (rd *RepoData) zstdReader(r io.Reader) (io.ReadCloser, error) {
+	dec, err := zstd.NewReader(r)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer gr.Close()
+	return newErrorCloser(dec), nil
+}
 
-	tr := tar.NewReader(gr)
-	for {
-		hdr, err := tr.Next()
+func (rd *RepoData) gzipReader(r io.Reader) (io.ReadCloser, error) {
+	return gzip.NewReader(r)
+}
+
+func (rd *RepoData) ReadRepo(r io.ReadSeeker, repo string) error {
+	read := func(rs io.ReadSeeker, decompress func(rs io.Reader) (io.ReadCloser, error)) error {
+		_, err := rs.Seek(0, io.SeekStart)
+		if err != nil {
+			return fmt.Errorf("unable to seek to head of repo file before gzip read: %w", err)
+		}
+
+		br := bufio.NewReader(rs)
+		rc, err := decompress(br)
 		if err != nil {
 			return err
 		}
+		defer rc.Close()
 
-		if hdr.Name == repoIndexFile {
-			return rd.ReadRepoIndex(tr, repo)
+		tr := tar.NewReader(rc)
+		for {
+			hdr, err := tr.Next()
+			if err != nil {
+				return err
+			}
+
+			if hdr.Name == repoIndexFile {
+				return rd.ReadRepoIndex(tr, repo)
+			}
+		}
+		return errNoIndex
+	}
+
+	type decompressor struct {
+		name string
+		fn   func(io.Reader) (io.ReadCloser, error)
+	}
+
+	decompressors := []decompressor{
+		{"zstd", rd.zstdReader},
+		{"gzip", rd.gzipReader},
+	}
+	var err error
+	for _, dec := range decompressors {
+		switch err = read(r, dec.fn); {
+		case err == nil:
+			return nil // OK
+		case errors.Is(err, zstd.ErrMagicMismatch),
+			errors.Is(err, tar.ErrHeader),
+			errors.Is(err, io.ErrUnexpectedEOF),
+			errors.Is(err, gzip.ErrHeader):
+			// Retry as next
+		case err != nil:
+			return fmt.Errorf("error parsing %s repodata: %w", dec.name, err)
 		}
 	}
-	return errNoIndex
+	return err
 }
 
 func copyToTempFile(r io.Reader) (*os.File, error) {
