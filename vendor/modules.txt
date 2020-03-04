@@ -6,6 +6,12 @@ github.com/golang/glog
 github.com/gorilla/handlers
 # github.com/julienschmidt/httprouter v1.2.0
 github.com/julienschmidt/httprouter
+# github.com/klauspost/compress v1.10.2
+github.com/klauspost/compress/fse
+github.com/klauspost/compress/huff0
+github.com/klauspost/compress/snappy
+github.com/klauspost/compress/zstd
+github.com/klauspost/compress/zstd/internal/xxhash
 # golang.org/x/sys v0.0.0-20190109145017-48ac38b7c8cb
 golang.org/x/sys/unix
 # golang.org/x/tools v0.0.0-20190110211028-68c5ac90f574

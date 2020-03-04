@@ -28,7 +28,7 @@ generate_notice() {
       pkg="${pkg%/*}"
     fi
 
-    printf ${last:+'\n\n\n'}
+    printf "${last:+\n\n\n}"
     last=x
 
     echo "$pkg" | sed 'p;s/./-/g'
