@@ -37,6 +37,8 @@ func main() {
 			"write access logs to stderr (info)")
 		maxRunning = cli.Int("max-queries", etoi("XQAPI_MAX_QUERIES", 16),
 			"the maximum number of filter queries to allow")
+		reloadEvery = cli.Duration("reload-every", etod("XQAPI_RELOAD_EVERY", 0),
+			"how often to reload xbps data (disabled if `interval` <= 0)")
 	)
 	argv := append([]string{
 		// Set by default to avoid creating files.
@@ -59,15 +61,13 @@ func main() {
 	}
 
 	// Reload repodata on hup.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, unix.SIGHUP)
-	go func() {
-		for range sig {
-			if err := reloadRepoData(api, flag.Args()); err != nil {
-				glog.Warningf("Error reloading repository data: %v", err)
-			}
-		}
-	}()
+	go reloadOnSignal(api, flag.Args(), unix.SIGHUP)
+
+	// Reload repodata on interval.
+	if interval := *reloadEvery; interval > 0 {
+		glog.Infof("Reloading repo data every %v", interval)
+		go reloadOnInterval(api, flag.Args(), interval)
+	}
 
 	// Start handling interrupt/terminate to die cleanly (mostly important for listening on
 	// a unix socket).
@@ -223,4 +223,22 @@ func waitForSignal(signals ...os.Signal) <-chan os.Signal {
 		close(out)
 	}()
 	return out
+}
+
+func reloadOnSignal(api *Querier, paths []string, signals ...os.Signal) {
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, signals...)
+	for range sig {
+		if err := reloadRepoData(api, paths); err != nil {
+			glog.Warningf("Error reloading repository data: %v", err)
+		}
+	}
+}
+
+func reloadOnInterval(api *Querier, paths []string, interval time.Duration) {
+	for range time.Tick(interval) {
+		if err := reloadRepoData(api, paths); err != nil {
+			glog.Warningf("Error reloading repository data on timer: %v", err)
+		}
+	}
 }

@@ -1,20 +1,30 @@
 # github.com/NYTimes/gziphandler v1.0.1
+## explicit
 github.com/NYTimes/gziphandler
 # github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b
+## explicit
 github.com/golang/glog
 # github.com/gorilla/handlers v1.4.0
+## explicit
 github.com/gorilla/handlers
 # github.com/julienschmidt/httprouter v1.2.0
+## explicit
 github.com/julienschmidt/httprouter
 # github.com/klauspost/compress v1.10.2
+## explicit
 github.com/klauspost/compress/fse
 github.com/klauspost/compress/huff0
 github.com/klauspost/compress/snappy
 github.com/klauspost/compress/zstd
 github.com/klauspost/compress/zstd/internal/xxhash
+# github.com/stretchr/testify v1.3.0
+## explicit
 # golang.org/x/sys v0.0.0-20190109145017-48ac38b7c8cb
+## explicit
 golang.org/x/sys/unix
 # golang.org/x/tools v0.0.0-20190110211028-68c5ac90f574
+## explicit
 golang.org/x/tools/container/intsets
 # howett.net/plist v0.0.0-20181124034731-591f970eefbb
+## explicit
 howett.net/plist
