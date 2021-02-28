@@ -43,6 +43,11 @@ It loads repodata into memory prior to serving it.
     complete.
     Defaults to `16`.
 
+`-reload-every`=_{duration}_::
+    Reload repository data every _duration_. If the duration is zero or a
+    negative interval, automatic reloading is disabled. By default, automatic
+    reloading is disabled.
+
 `-log-access`=_{t|f}_::
     Whether to emit access logs. Requests that get a 404, 304, or 0 response are
     not logged. If passed without a value, `t` is assumed.

@@ -2,12 +2,12 @@
 .\"     Title: xq-api
 .\"    Author: Noel Cower
 .\" Generator: Asciidoctor 1.5.8
-.\"      Date: 2019-01-20
+.\"      Date: 2021-02-27
 .\"    Manual: XQ-API
 .\"    Source: XQ-API
 .\"  Language: English
 .\"
-.TH "XQ\-API" "8" "2019-01-20" "XQ\-API" "XQ\-API"
+.TH "XQ\-API" "8" "2021-02-27" "XQ\-API" "XQ\-API"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -64,6 +64,13 @@ The maximum number of query requests that can run in parallel. If more than
 \f(CRn\fP query requests are made in parallel, they will block until others
 complete.
 Defaults to \f(CR16\fP.
+.RE
+.sp
+\f(CR\-reload\-every\fP=\fI{duration}\fP
+.RS 4
+Reload repository data every \fIduration\fP. If the duration is zero or a
+negative interval, automatic reloading is disabled. By default, automatic
+reloading is disabled.
 .RE
 .sp
 \f(CR\-log\-access\fP=\fI{t|f}\fP

@@ -1,6 +1,6 @@
 module go.spiff.io/xq-api
 
-go 1.13
+go 1.15
 
 require (
 	github.com/NYTimes/gziphandler v1.0.1

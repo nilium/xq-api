@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"time"
 )
 
 // etoi looks up an environment variable by name and, if defined, parses it as an integer, and
@@ -47,4 +48,20 @@ func etos(name, def string) string {
 		return def
 	}
 	return v
+}
+
+// etod looks up an environment variable and, if defined, parses it as a duration and returns the
+// parsed duration. If the environment variable isn't defined or cannot be parsed, it returns def.
+//
+// Valid duration strings are those supported by time.ParseDuration.
+func etod(name string, def time.Duration) time.Duration {
+	v, ok := os.LookupEnv(name)
+	if !ok {
+		return def
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return def
+	}
+	return d
 }
